@@ -1,4 +1,5 @@
 # Flight Price Prediction Application ✈️
+🚀 **[Click here to try the Live App](https://flight-price-prediction-ajb9whapsasgukyad5efks.streamlit.app/)**
 
 ## Project Overview
 This project predicts flight ticket prices based on multiple features such as airline, source, destination, number of stops, duration, and date of journey. The prediction model is built using **Random Forest Regressor** and a complete preprocessing pipeline for feature extraction and transformation.
