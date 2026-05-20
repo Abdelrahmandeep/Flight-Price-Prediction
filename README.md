@@ -1,6 +1,6 @@
 # Flight Price Prediction Application ✈️
 
-🚀 **[Click here to try the Live App]([https://flight-price-prediction-ajb9whapsasgukyad5efks.streamlit.app/](https://flight-price-prediction-34pkt7d67nh5jckymzmbak.streamlit.app/))**
+🚀 **[Click here to try the Live App]([https://flight-price-prediction-ajb9whapsasgukyad5efks.streamlit.app/](https://flight-price-prediction-34pkt7d67nh5jckymzmbak.streamlit.app/)**
 
 
 ## Project Overview
