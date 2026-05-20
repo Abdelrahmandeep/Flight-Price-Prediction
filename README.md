@@ -2,7 +2,6 @@
 
 🚀 **[Click here to try the Live App](https://flight-price-prediction-ajb9whapsasgukyad5efks.streamlit.app/)**
 
-![App Screenshot](screenshot.png)
 
 ## Project Overview
 
