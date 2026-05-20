@@ -78,7 +78,7 @@ if data is not None and model is not None:
         additional_info = st.selectbox(
             "معلومات إضافية",
             sorted(data["Additional_Info"].dropna().unique()),
-            index=sorted(data["Additional_Info"].dropna().unique()).tolist().index("No info")
+            index=sorted(data["Additional_Info"].dropna().unique()).index("No info")
             if "No info" in data["Additional_Info"].dropna().unique()
             else 0,
         )
