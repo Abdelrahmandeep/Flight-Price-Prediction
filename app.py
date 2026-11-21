@@ -1,203 +1,369 @@
-"""
-app.py — تطبيق Streamlit للتنبؤ بأسعار تذاكر الطيران ✈️
-========================================================
-يستخدم النموذج المدرب (best_model.pkl) للتنبؤ بسعر التذكرة
-بناءً على بيانات الرحلة المدخلة من المستخدم.
-"""
-
 import streamlit as st
 import pandas as pd
 import joblib
 import os
 import numpy as np
+import sklearn.compose._column_transformer as ct
+from sklearn.preprocessing import FunctionTransformer
 from io import BytesIO
-
-# استيراد دوال المعالجة المشتركة
-from preprocessing import extract_date_features, clean_and_extract_features, STOPS_MAP
+import requests
+from streamlit_lottie import st_lottie
+import plotly.express as px
 
 # ===============================
 # إعداد الصفحة
 # ===============================
-st.set_page_config(page_title="تطبيق تسعير الطيران", page_icon="✈️", layout="wide")
-st.title("✈️ تطبيق تسعير تذاكر الطيران")
-st.markdown("أدخل بيانات الرحلة لتوقع سعر التذكرة بناءً على الموديل المدرب 🎯")
+st.set_page_config(page_title="توقع أسعار الطيران", layout="wide", initial_sidebar_state="collapsed")
+
+# ===============================
+# إعدادات التصميم (CSS)
+# ===============================
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap');
+
+#MainMenu {visibility: hidden;}
+footer {visibility: hidden;}
+header {visibility: hidden;}
+
+html, body, [class*="css"] {
+    font-family: 'Cairo', sans-serif !important;
+}
+
+/* خلفية احترافية رمادية/زرقاء هادئة بدلاً من الأبيض الفاقع */
+.stApp {
+    background: #f4f6f9;
+}
+
+/* تصميم الكروت الإحصائية */
+[data-testid="metric-container"] {
+    background-color: #ffffff;
+    border: 1px solid #e1e5eb;
+    border-radius: 10px;
+    padding: 20px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+[data-testid="metric-container"]:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05);
+}
+[data-testid="stMetricValue"] {
+    font-size: 2.2rem;
+    font-weight: 700;
+    color: #2c3e50;
+}
+[data-testid="stMetricLabel"] {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #7f8c8d;
+}
+
+/* تحسين الأزرار */
+.stButton>button {
+    width: 100%;
+    border-radius: 8px;
+    background: #2c3e50;
+    color: white !important;
+    font-weight: 600;
+    font-size: 1.15rem;
+    border: none;
+    box-shadow: 0 2px 4px rgba(44, 62, 80, 0.2);
+    transition: background 0.2s;
+}
+.stButton>button:hover {
+    background: #1a252f;
+}
+
+.gradient-text {
+    color: #2c3e50;
+    font-weight: 800;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# ===============================
+# تحميل رسوم Lottie
+# ===============================
+@st.cache_data
+def load_lottieurl(url: str):
+    try:
+        r = requests.get(url, timeout=5)
+        if r.status_code != 200:
+            return None
+        return r.json()
+    except:
+        return None
+
+lottie_flight = load_lottieurl("https://lottie.host/9e47f2ef-cbef-4fa1-8ca6-0b81831c18bf/G8E1Uj3tX7.json")
+lottie_dashboard = load_lottieurl("https://lottie.host/bba4c4be-e2d1-42ae-932d-32cd835c1650/474e6O8rW7.json")
+
+# ===============================
+# تعريف الدوال والكلاسات الخاصة بالنموذج
+# ===============================
+def extract_date_features(df):
+    df = df.copy()
+    if "Date_of_Journey" in df.columns:
+        df["Date_of_Journey"] = pd.to_datetime(df["Date_of_Journey"], dayfirst=True)
+        df["Journey_Day"] = df["Date_of_Journey"].dt.day
+        df["Journey_Month"] = df["Date_of_Journey"].dt.month
+        df["Journey_Year"] = df["Date_of_Journey"].dt.year
+        df.drop("Date_of_Journey", axis=1, inplace=True)
+    return df
+
+class _RemainderColsList(list):
+    pass
+
+setattr(ct, "_RemainderColsList", _RemainderColsList)
 
 # ===============================
 # تحميل الموديل والبيانات
 # ===============================
-MODEL_PATH = os.path.join(os.path.dirname(__file__), "best_model.pkl")
-DATA_PATH = os.path.join(os.path.dirname(__file__), "Data_Train.xlsx")
-
-
 @st.cache_resource
 def load_model():
-    """تحميل النموذج مع التخزين المؤقت لتسريع إعادة التشغيل."""
-    return joblib.load(MODEL_PATH)
-
+    MODEL_PATH = os.path.join(os.getcwd(), "best_model.pkl")
+    try:
+        globals()["extract_date_features"] = extract_date_features
+        globals()["_RemainderColsList"] = _RemainderColsList
+        globals()["FunctionTransformer"] = FunctionTransformer
+        model = joblib.load(MODEL_PATH)
+        return model, True, None
+    except Exception as e:
+        return None, False, str(e)
 
 @st.cache_data
 def load_data():
-    """تحميل بيانات التدريب للحصول على القيم الفريدة للقوائم المنسدلة."""
-    return pd.read_excel(DATA_PATH, engine="openpyxl")
+    DATA_PATH = os.path.join(os.getcwd(), "Data_Train.xlsx")
+    try:
+        data = pd.read_excel(DATA_PATH, engine="openpyxl")
+        return data, True, None
+    except Exception as e:
+        return None, False, str(e)
 
-
-try:
-    model = load_model()
-    st.sidebar.success("✅ تم تحميل الموديل بنجاح")
-except Exception as e:
-    st.sidebar.error(f"❌ خطأ في تحميل الموديل: {e}")
-    model = None
-
-try:
-    data = load_data()
-    st.sidebar.success("✅ تم تحميل البيانات بنجاح")
-except Exception as e:
-    st.sidebar.error(f"❌ خطأ في تحميل البيانات: {e}")
-    data = None
-
-# ===============================
-# تهيئة تخزين التوقعات في session_state
-# ===============================
 if "predictions" not in st.session_state:
     st.session_state["predictions"] = pd.DataFrame(columns=[
         "Airline", "Source", "Destination", "Total_Stops",
-        "Duration_Minutes", "Days_Left", "Additional_Info", "Predicted_Price"
+        "Duration_Minutes", "Predicted_Price"
     ])
 
+model, is_model_loaded, model_err = load_model()
+data, is_data_loaded, data_err = load_data()
+
 # ===============================
-# واجهة إدخال البيانات
+# الهيكل الرئيسي للتطبيق
 # ===============================
-if data is not None and model is not None:
-    st.header("🧾 إدخال بيانات الرحلة")
+st.markdown("<br>", unsafe_allow_html=True)
+tab1, tab2, tab3 = st.tabs(["حاسبة الأسعار", "لوحة المتابعة", "معلومات النظام"])
 
-    col1, col2 = st.columns(2)
-    with col1:
-        airline = st.selectbox("شركة الطيران", sorted(data["Airline"].dropna().unique()))
-        source = st.selectbox("مكان الإقلاع", sorted(data["Source"].dropna().unique()))
-        destination = st.selectbox("الوجهة", sorted(data["Destination"].dropna().unique()))
-        additional_info = st.selectbox(
-            "معلومات إضافية",
-            sorted(data["Additional_Info"].dropna().unique()),
-            index=sorted(data["Additional_Info"].dropna().unique()).index("No info")
-            if "No info" in data["Additional_Info"].dropna().unique()
-            else 0,
-        )
-    with col2:
-        total_stops = st.selectbox(
-            "عدد التوقفات",
-            ["non-stop", "1 stop", "2 stops", "3 stops", "4 stops"],
-        )
-        duration_hours = st.number_input("⏱️ مدة الرحلة — ساعات", min_value=0, max_value=40, value=5)
-        duration_minutes = st.number_input("⏱️ مدة الرحلة — دقائق", min_value=0, max_value=59, value=0)
-        days_left = st.slider("📆 عدد الأيام قبل الرحلة", 0, 60, 10)
+with tab1:
+    h_col1, h_col2 = st.columns([2.5, 1])
+    with h_col1:
+        st.markdown("<h1 class='gradient-text' style='font-size: 3rem; margin-bottom: 0px;'>نظام توقع أسعار تذاكر الطيران</h1>", unsafe_allow_html=True)
+        st.markdown("""
+        <p style='font-size: 1.15rem; color: #475569; margin-top: 15px; line-height: 1.8; font-weight: 600;'>
+        يعتمد هذا النظام على نماذج تحليل البيانات لتقدير أسعار رحلات الطيران. <br>
+        يرجى إدخال تفاصيل الرحلة المخطط لها أدناه للحصول على التكلفة التقديرية.
+        </p>
+        """, unsafe_allow_html=True)
+    with h_col2:
+        if lottie_flight:
+            st_lottie(lottie_flight, height=160, key="flight_anim")
 
-    date_of_journey = st.date_input("📅 تاريخ الرحلة")
-    dep_time = st.time_input("⏰ وقت الإقلاع")
+    st.markdown("<br>", unsafe_allow_html=True)
 
-    # بناء Duration بالتنسيق الأصلي مثل "2h 30m"
-    duration_str = f"{duration_hours}h"
-    if duration_minutes > 0:
-        duration_str += f" {duration_minutes}m"
+    if not is_model_loaded:
+        st.error(f"خطأ في تحميل النموذج: {model_err}")
+    elif not is_data_loaded:
+        st.error(f"خطأ في تحميل ملف البيانات: {data_err}")
+    else:
+        st.markdown("""
+        <div style='background: #ffffff; border-radius: 10px; padding: 25px; border: 1px solid #e1e5eb; margin-bottom: 30px;'>
+            <h3 style='color: #2c3e50; font-weight: 700; margin-bottom: 25px; font-size: 1.5rem;'>مسار الرحلة وتفاصيلها</h3>
+        """, unsafe_allow_html=True)
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            airline = st.selectbox("شركة الطيران", sorted(data["Airline"].dropna().unique()))
+            source = st.selectbox("مدينة الإقلاع", sorted(data["Source"].dropna().unique()))
+            destination = st.selectbox("وجهة الوصول", sorted(data["Destination"].dropna().unique()))
+        
+        with col2:
+            total_stops = st.selectbox("عدد التوقفات", ["non-stop", "1 stop", "2 stops", "3 stops", "4 stops"])
+            duration = st.slider("مدة الرحلة المتوقعة (ساعات)", 1, 40, 5)
+            
+        with col3:
+            date_of_journey = st.date_input("تاريخ الإقلاع")
+            dep_time = st.time_input("وقت الإقلاع التقريبي")
 
-    # بناء الداتا فريم بالأعمدة الأصلية
-    input_df = pd.DataFrame({
-        "Airline": [airline],
-        "Source": [source],
-        "Destination": [destination],
-        "Total_Stops": [total_stops],
-        "Duration": [duration_str],
-        "Days_Left": [days_left],
-        "Date_of_Journey": [pd.to_datetime(date_of_journey)],
-        "Dep_Time": [dep_time.strftime("%H:%M")],
-        "Additional_Info": [additional_info],
-    })
+        st.markdown("</div>", unsafe_allow_html=True)
+        
+        predict_col1, predict_col2, predict_col3 = st.columns([1, 1.5, 1])
+        with predict_col2:
+            st.markdown("<br>", unsafe_allow_html=True)
+            predict_button = st.button("احسب السعر المتوقع")
 
-    # تطبيق المعالجة المشتركة
-    input_df = extract_date_features(input_df)
-    input_df = clean_and_extract_features(input_df)
+        if predict_button:
+            with st.spinner('جاري حساب السعر التقديري بناءً على المعطيات...'):
+                input_df = pd.DataFrame({
+                    "Airline": [airline],
+                    "Source": [source],
+                    "Destination": [destination],
+                    "Total_Stops": [total_stops],
+                    "Duration": [f"{duration}h"],
+                    "Date_of_Journey": [pd.to_datetime(date_of_journey)],
+                    "Dep_Time": [dep_time.strftime("%H:%M")],
+                    "Additional_Info": ["No info"]
+                })
 
-    # حذف الأعمدة الخام التي تم تحويلها
-    cols_to_drop = [c for c in ["Dep_Time", "Duration"] if c in input_df.columns]
-    input_df.drop(columns=cols_to_drop, inplace=True)
+                input_df = extract_date_features(input_df)
+                input_df["Dep_Hour"] = pd.to_datetime(input_df["Dep_Time"]).dt.hour
+                input_df["Dep_Minute"] = pd.to_datetime(input_df["Dep_Time"]).dt.minute
+                input_df.drop("Dep_Time", axis=1, inplace=True)
+                stops_map = {"non-stop": 0, "1 stop": 1, "2 stops": 2, "3 stops": 3, "4 stops": 4}
+                input_df["Total_Stops"] = input_df["Total_Stops"].map(stops_map)
+                input_df["Duration_Minutes"] = input_df["Duration"].str.replace("h", "").astype(float) * 60
+                input_df.drop("Duration", axis=1, inplace=True)
 
-    st.write("### 👇 البيانات المدخلة بعد المعالجة")
-    st.dataframe(input_df)
+                try:
+                    prediction_log = model.predict(input_df)
+                    prediction = np.expm1(prediction_log)
+                    price = float(prediction[0])
+                    
+                    st.markdown("<br><br>", unsafe_allow_html=True)
+                    st.success(f"التكلفة التقديرية للتذكرة: {price:,.2f} جنيه / روبية")
 
-    # ===============================
-    # التنبؤ
-    # ===============================
-    if st.button("🔮 توقع السعر"):
-        try:
-            prediction_log = model.predict(input_df)
-            prediction = np.expm1(prediction_log)
-            price = float(prediction[0])
+                    new_row = {
+                        "Airline": airline,
+                        "Source": source,
+                        "Destination": destination,
+                        "Total_Stops": total_stops,
+                        "Duration_Minutes": duration * 60,
+                        "Predicted_Price": price
+                    }
+                    st.session_state["predictions"] = pd.concat(
+                        [st.session_state["predictions"], pd.DataFrame([new_row])],
+                        ignore_index=True
+                    )
 
-            st.success(f"💰 السعر المتوقع للتذكرة هو: {price:,.2f} جنيه")
+                except Exception as e:
+                    st.error(f"حدث خطأ أثناء المعالجة: {e}")
 
-            # حفظ النتيجة في الداشبورد
-            new_row = {
-                "Airline": airline,
-                "Source": source,
-                "Destination": destination,
-                "Total_Stops": total_stops,
-                "Duration_Minutes": duration_hours * 60 + duration_minutes,
-                "Days_Left": days_left,
-                "Additional_Info": additional_info,
-                "Predicted_Price": price,
-            }
-            st.session_state["predictions"] = pd.concat(
-                [st.session_state["predictions"], pd.DataFrame([new_row])],
-                ignore_index=True,
-            )
-
-        except Exception as e:
-            st.error(f"⚠️ حدث خطأ أثناء التنبؤ: {e}")
-
-    # ===============================
-    # 📊 عرض الداشبورد التفاعلية
-    # ===============================
-    if not st.session_state["predictions"].empty:
-        st.markdown("---")
-        st.subheader("📊 لوحة التوقعات السابقة")
-
+with tab2:
+    st.markdown("<h2 class='gradient-text' style='font-size: 2.2rem; margin-bottom: 20px;'>لوحة المتابعة والتحليلات</h2>", unsafe_allow_html=True)
+    
+    if st.session_state["predictions"].empty:
+        st.info("لم يتم تسجيل أي بيانات بعد. استخدم حاسبة الأسعار لتوليد سجل التوقعات.")
+        if lottie_dashboard:
+            st_lottie(lottie_dashboard, height=350, key="empty_dashboard")
+    else:
         df_pred = st.session_state["predictions"]
 
         col1, col2, col3 = st.columns(3)
-        col1.metric("عدد التوقعات", len(df_pred))
-        col2.metric("أرخص سعر", f"{df_pred['Predicted_Price'].min():,.2f} جنيه")
-        col3.metric("أعلى سعر", f"{df_pred['Predicted_Price'].max():,.2f} جنيه")
+        col1.metric("إجمالي العمليات", len(df_pred), "عملية حديثة")
+        col2.metric("أرخص سعر متوقع", f"{df_pred['Predicted_Price'].min():,.0f}")
+        col3.metric("أعلى سعر متوقع", f"{df_pred['Predicted_Price'].max():,.0f}")
 
-        st.dataframe(df_pred)
+        st.markdown("<br><br>", unsafe_allow_html=True)
+        st.markdown("<h3 style='color: #2c3e50; font-weight: 700; font-size: 1.5rem;'>سجل الرحلات المفصل</h3>", unsafe_allow_html=True)
+        
+        st.dataframe(
+            df_pred,
+            column_config={
+                "Airline": st.column_config.TextColumn("الشركة", width="medium"),
+                "Source": "الإقلاع",
+                "Destination": "الوجهة",
+                "Total_Stops": st.column_config.TextColumn("التوقفات"),
+                "Duration_Minutes": st.column_config.NumberColumn("المدة", format="%d min"),
+                "Predicted_Price": st.column_config.ProgressColumn(
+                    "السعر المتوقع",
+                    format="%f",
+                    min_value=0, 
+                    max_value=float(df_pred["Predicted_Price"].max() * 1.2),
+                ),
+            },
+            hide_index=True,
+            use_container_width=True
+        )
 
-        st.bar_chart(df_pred.groupby("Airline")["Predicted_Price"].mean())
+        st.markdown("<br><br>", unsafe_allow_html=True)
+        st.markdown("<h3 style='color: #2c3e50; font-weight: 700; font-size: 1.5rem;'>الرسوم البيانية</h3>", unsafe_allow_html=True)
+        
+        c1, c2 = st.columns(2)
+        
+        with c1:
+            fig_bar = px.bar(
+                df_pred.groupby("Airline", as_index=False)["Predicted_Price"].mean().sort_values("Predicted_Price", ascending=False),
+                x="Airline", y="Predicted_Price",
+                title="متوسط السعر حسب شركة الطيران",
+                labels={"Predicted_Price": "متوسط السعر", "Airline": "الشركة"},
+                color="Airline",
+                color_discrete_sequence=px.colors.qualitative.Pastel
+            )
+            fig_bar.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", showlegend=False, font=dict(family="Cairo", size=13))
+            st.plotly_chart(fig_bar, use_container_width=True)
+            
+        with c2:
+            fig_pie = px.pie(
+                df_pred, names="Airline",
+                title="توزيع عمليات البحث حسب الشركة",
+                hole=0.4,
+                color_discrete_sequence=px.colors.qualitative.Pastel
+            )
+            fig_pie.update_traces(textposition='inside', textinfo='percent+label')
+            fig_pie.update_layout(paper_bgcolor="rgba(0,0,0,0)", font=dict(family="Cairo", size=13))
+            st.plotly_chart(fig_pie, use_container_width=True)
 
-        # ===============================
-        # 📤 تحميل النتائج و 🗑️ إعادة التعيين
-        # ===============================
-        st.markdown("### ⚙️ أدوات إضافية")
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        fig_scatter = px.scatter(
+            df_pred, x="Duration_Minutes", y="Predicted_Price",
+            color="Airline", size="Predicted_Price",
+            hover_data=["Source", "Destination", "Total_Stops"],
+            title="علاقة مدة الرحلة بالسعر التقديري",
+            labels={"Predicted_Price": "السعر المرجح", "Duration_Minutes": "المدة (دقائق)"},
+            size_max=25,
+            color_discrete_sequence=px.colors.qualitative.Pastel
+        )
+        fig_scatter.update_layout(plot_bgcolor="rgba(255, 255, 255, 0.4)", paper_bgcolor="rgba(0,0,0,0)", hovermode="closest", font=dict(family="Cairo", size=13))
+        st.plotly_chart(fig_scatter, use_container_width=True)
 
-        colA, colB = st.columns(2)
+        st.markdown("<hr style='border: 1px solid #e1e5eb; margin: 30px 0;'>", unsafe_allow_html=True)
+        st.markdown("<h3 style='color: #475569; font-weight: 700; font-size: 1.3rem;'>أدوات إدارة البيانات</h3>", unsafe_allow_html=True)
 
-        # 🔹 زر التحميل كملف Excel
+        colA, colB, colC = st.columns([1, 1, 2])
         with colA:
             buffer = BytesIO()
             with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-                df_pred.to_excel(writer, index=False, sheet_name="Predictions")
+                df_pred.to_excel(writer, index=False, sheet_name="Data")
             st.download_button(
-                label="📤 تحميل النتائج كملف Excel",
+                label="تصدير السجل (Excel)",
                 data=buffer.getvalue(),
-                file_name="Predicted_Flights.xlsx",
+                file_name="Flight_Analysis_Export.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
             )
 
-        # 🔹 زر إعادة التعيين
         with colB:
-            if st.button("🗑️ إعادة تعيين التوقعات"):
+            if st.button("مسح السجل الحالي", use_container_width=True):
                 st.session_state["predictions"] = pd.DataFrame(columns=df_pred.columns)
-                st.success("✅ تم مسح جميع التوقعات.")
+                st.rerun()
 
-else:
-    st.error("⚠️ لم يتم تحميل البيانات أو الموديل بشكل صحيح. تأكد من وجود الملفات في نفس المجلد.")
-
-st.markdown("---")
-st.caption("🚀 تم إنشاء هذا التطبيق باستخدام Streamlit و Scikit-learn")
+with tab3:
+    st.markdown("<h2 class='gradient-text' style='font-size: 2.2rem; margin-bottom: 20px;'>معلومات النظام</h2>", unsafe_allow_html=True)
+    st.markdown("""
+        <div style='background: #ffffff; padding: 30px; border-radius: 10px; border: 1px solid #e1e5eb; margin-top: 20px;'>
+        <p style='font-size: 1.15rem; color: #334155; line-height: 1.8;'>
+        تم بناء هذا التطبيق لتقديم واجهة مبسطة لنموذج توقع أسعار تذاكر الطيران الخاص بالمشروع.
+        الهدف هو مساعدة المستخدمين على معرفة النطاق السعري التقديري للرحلات بناءً على التواريخ والوجهات وشركات الطيران المدخلة.
+        </p>
+        <br>
+        <h4 style='color: #2c3e50; font-weight: 700; font-size: 1.3rem; margin-bottom: 15px;'>المواصفات التقنية:</h4>
+        <ul style='font-size: 1.05rem; color: #475569; line-height: 2; list-style-type: disc; padding-right: 20px;'>
+            <li>محرك عرض البيانات: مكتبة Streamlit لتكوين واجهة المستخدم.</li>
+            <li>الرسوم البيانية: تم استخدام Plotly للحصول على رسومات إحصائية تفاعلية.</li>
+            <li>النموذج التحليلي: Scikit-Learn (خوارزمية Regression).</li>
+            <li>معالجة البيانات: مكتبة Pandas لتنظيم وحفظ سجل التوقعات.</li>
+        </ul>
+        </div>
+    """, unsafe_allow_html=True)

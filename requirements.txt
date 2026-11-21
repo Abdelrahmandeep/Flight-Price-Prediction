@@ -3,4 +3,8 @@ pandas==2.3.3
 numpy==2.4.3
 scikit-learn==1.8.0
 joblib==1.5.3
+plotly==6.3.1
+imbalanced-learn==0.14.1
 openpyxl==3.1.5
+streamlit-lottie==0.2.3
+requests==2.32.3
