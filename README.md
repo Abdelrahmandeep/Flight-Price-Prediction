@@ -25,7 +25,7 @@ This project provides an end-to-end Machine Learning solution to predict flight 
   - The model is trained on log-transformed prices (`np.log1p`) to handle skewness.
   - **Comprehensive Evaluation**: In addition to standard log-scale metrics, the project now includes an **Original Price Scale Evaluation** using `np.expm1` to measure actual monetary errors and real percentage accuracy.
 
-### 2. 🎨 Enhanced Arabic Interactive Web App (`app.py` / `add.py`) [New 🆕]
+### 2. 🎨 Enhanced Arabic Interactive Web App (`app.py`) [New 🆕]
 - **Modern UI**: Styled with Cairo font, card layouts, and subtle shadows.
 - **Lottie Animations**: Fluid animated visuals for flight booking and analytics.
 - **Three Core Tabs**:
@@ -66,7 +66,6 @@ This project provides an end-to-end Machine Learning solution to predict flight 
 
 ```
 ├── app.py                          # Streamlit web application (Main entrypoint)
-├── add.py                          # Interactive dashboard alias
 ├── preprocessing.py                # Shared feature engineering & preprocessing
 ├── retrain_model.py                # Script to retrain and compress the model
 ├── flight_price_prediction.ipynb   # Complete notebook: EDA, tuning, & dual-scale evaluation
